@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StickMan Runner</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Start Message Overlay -->
+    <div id="startOverlay" class="fullscreen-overlay">
+        <div class="start-message">
+            <h1>StickMan is Starting...</h1>
+        </div>
+    </div>
+
+    <!-- Game Mode Selection (Single vs Multiplayer) -->
+    <div id="gameModePanel" class="overlay-panel hidden">
+        <div class="panel-content">
+            <h2>Choose Game Mode</h2>
+            <div class="mode-buttons">
+                <button id="singlePlayerBtn" class="mode-btn single-player-mode">
+                    <span class="mode-icon">🏃</span>
+                    <span class="mode-title">Single Player</span>
+                    <span class="mode-desc">Play solo adventure</span>
+                </button>
+                <button id="multiPlayerBtn" class="mode-btn multi-player-mode">
+                    <span class="mode-icon">👥</span>
+                    <span class="mode-title">Multiplayer</span>
+                    <span class="mode-desc">Compete with friends</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Multiplayer Lobby Selection -->
+    <div id="lobbyModePanel" class="overlay-panel hidden">
+        <div class="panel-content">
+            <h2>Multiplayer Lobby</h2>
+            <div class="mode-buttons">
+                <button id="createLobbyBtn" class="mode-btn create-lobby-mode">
+                    <span class="mode-icon">🎮</span>
+                    <span class="mode-title">Create Lobby</span>
+                    <span class="mode-desc">Start a new game room</span>
+                </button>
+                <button id="joinLobbyBtn" class="mode-btn join-lobby-mode">
+                    <span class="mode-icon">🔗</span>
+                    <span class="mode-title">Join Lobby</span>
+                    <span class="mode-desc">Enter existing game room</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Join Lobby Panel -->
+    <div id="joinLobbyPanel" class="overlay-panel hidden">
+        <div class="panel-content">
+            <h2>Join Lobby</h2>
+            <div class="form-group">
+                <label for="playerNameJoin">Your Name:</label>
+                <input type="text" id="playerNameJoin" placeholder="Enter your name" maxlength="20">
+            </div>
+            <div class="form-group">
+                <label for="lobbyCode">Lobby Code:</label>
+                <input type="text" id="lobbyCode" placeholder="Enter 9-digit code" maxlength="9" pattern="[0-9]{9}">
+            </div>
+            <div class="lobby-buttons">
+                <button id="joinGameBtn" class="continue-btn">Join Game</button>
+                <button id="backToLobbyModeBtn" class="continue-btn secondary">Back</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Lobby Panel -->
+    <div id="createLobbyPanel" class="overlay-panel hidden">
+        <div class="panel-content">
+            <h2>Create Lobby</h2>
+            <div class="lobby-info">
+                <h3>Lobby Code: <span id="generatedLobbyCode">---------</span></h3>
+                <p>Share this code with your friends!</p>
+            </div>
+            <div class="form-group">
+                <label for="hostPlayerName">Your Name:</label>
+                <input type="text" id="hostPlayerName" placeholder="Enter your name" maxlength="20">
+            </div>
+            <div class="form-group">
+                <label>Race Type:</label>
+                <div class="race-options">
+                    <label class="radio-option">
+                        <input type="radio" name="multiRaceType" value="1000" checked>
+                        <span>1000m Race</span>
+                    </label>
+                    <label class="radio-option">
+                        <input type="radio" name="multiRaceType" value="1500">
+                        <span>1500m Race</span>
+                    </label>
+                    <label class="radio-option">
+                        <input type="radio" name="multiRaceType" value="2000">
+                        <span>2000m Race</span>
+                    </label>
+                </div>
+            </div>
+            <div class="connected-players">
+                <h4>Connected Players: <span id="playerCount">1</span></h4>
+                <div id="playerList">
+                    <div class="player-item host">🎮 <span id="hostName">Host</span> (Host)</div>
+                </div>
+            </div>
+            <div class="lobby-buttons">
+                <button id="startMultiGameBtn" class="continue-btn">Start Game</button>
+                <button id="backToLobbyModeBtn2" class="continue-btn secondary">Back</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Player Setup Panel -->
+    <div id="playerSetupPanel" class="overlay-panel hidden">
+        <div class="panel-content">
+            <h2>Player Setup</h2>
+            <div class="form-group">
+                <label for="playerName">Player Name:</label>
+                <input type="text" id="playerName" placeholder="Enter your name" maxlength="20">
+            </div>
+            <div class="form-group">
+                <label>Race Type:</label>
+                <div class="race-options">
+                    <label class="radio-option">
+                        <input type="radio" name="raceType" value="500" checked>
+                        <span>500m Race</span>
+                    </label>
+                    <label class="radio-option">
+                        <input type="radio" name="raceType" value="750">
+                        <span>750m Race</span>
+                    </label>
+                    <label class="radio-option">
+                        <input type="radio" name="raceType" value="1000">
+                        <span>1000m Race</span>
+                    </label>
+                </div>
+            </div>
+            <button id="continueToModeBtn" class="continue-btn">Continue</button>
+        </div>
+    </div>
+
+    <!-- Mode Selection Panel -->
+    <div id="modeSelectionPanel" class="overlay-panel hidden">
+        <div class="panel-content">
+            <h2>Choose Your Mode</h2>
+            <div class="mode-buttons">
+                <button id="landModeBtn" class="mode-btn land-mode">
+                    <span class="mode-icon">🏃</span>
+                    <span class="mode-title">Land Mode</span>
+                    <span class="mode-desc">Classic runner experience</span>
+                </button>
+                <button id="underwaterModeBtn" class="mode-btn underwater-mode">
+                    <span class="mode-icon">🏊</span>
+                    <span class="mode-title">Underwater Mode</span>
+                    <span class="mode-desc">Swimming adventure</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Construction Message Overlay -->
+    <div id="constructionOverlay" class="fullscreen-overlay hidden">
+        <div class="construction-message">
+            <h1>🚧 Underwater Mode is under construction... 🚧</h1>
+            <p>Returning to mode selection...</p>
+        </div>
+    </div>
+
+    <!-- Game Finished Overlay -->
+    <div id="gameFinishedOverlay" class="fullscreen-overlay hidden">
+        <div class="game-finished-message">
+            <h1>🏁 Game Finished! 🏁</h1>
+            <div class="completion-stats">
+                <p><strong>Congratulations <span id="finishedPlayerName"></span>!</strong></p>
+                <p>You completed the <span id="finishedRaceDistance"></span>m race!</p>
+                <p>Final Score: <span id="finishedScore"></span></p>
+                <p>Time: <span id="raceTime"></span> seconds</p>
+            </div>
+            <div class="finish-buttons">
+                <button id="playAgainBtn" class="finish-btn primary">Play Again</button>
+                <button id="newRaceBtn" class="finish-btn secondary">New Race</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Game Container -->
+    <div class="game-container">
+        <!-- Live Race Tracking Bar -->
+        <div id="raceTrackingBar" class="race-tracking-bar hidden">
+            <div class="tracking-bar-container">
+                <div class="tracking-bar-background">
+                    <!-- Segment markers -->
+                    <div class="segment-marker" style="left: 25%">25%</div>
+                    <div class="segment-marker" style="left: 50%">50%</div>
+                    <div class="segment-marker" style="left: 75%">75%</div>
+                    <div class="segment-marker" style="left: 100%">100%</div>
+                </div>
+                <div class="tracking-bar-progress" id="trackingProgress"></div>
+                <div class="player-marker" id="playerMarker">
+                    <span class="player-marker-name" id="playerMarkerName"></span>
+                </div>
+            </div>
+            <div class="tracking-bar-labels">
+                <span class="start-label">START</span>
+                <span class="finish-label">FINISH</span>
+            </div>
+        </div>
+
+        <!-- Respawn Countdown Overlay -->
+        <div id="respawnCountdown" class="respawn-countdown hidden">
+            <div class="respawn-message">
+                <h2>💥 Collision! 💥</h2>
+                <div class="countdown-display">
+                    <span>Respawning in </span>
+                    <span id="countdownNumber">3</span>
+                    <span>...</span>
+                </div>
+                <div class="respawn-info">
+                    <span>Returning to segment start</span>
+                </div>
+            </div>
+        </div>
+        
+        <canvas id="gameCanvas" width="800" height="300"></canvas>
+        <div class="game-info">
+            <div class="player-info">
+                <span id="playerDisplay">Player: </span>
+                <span id="raceDisplay">Race: </span>
+            </div>
+            <div class="score">Score: <span id="scoreValue">0</span></div>
+            <div class="instructions" id="instructions">
+                SPACEBAR: Jump/Shoot | ENTER: Restart<br>
+                <small>Power-ups: Gun (shoot), Car (speed + E to switch J/S modes), Jumper (super jump 10s)</small>
+            </div>
+            <div class="game-over" id="gameOver">
+                GAME OVER<br>
+                <small>Press ENTER to restart</small>
+            </div>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
