@@ -62,7 +62,7 @@
             </div>
             <div class="form-group">
                 <label for="lobbyCode">Lobby Code:</label>
-                <input type="text" id="lobbyCode" placeholder="Enter 9-digit code" maxlength="9" pattern="[0-9]{9}">
+                <input type="text" id="lobbyCode" placeholder="Enter 6-digit code" maxlength="6" pattern="[0-9]{6}">
             </div>
             <div class="lobby-buttons">
                 <button id="joinGameBtn" class="continue-btn">Join Game</button>
@@ -76,8 +76,12 @@
         <div class="panel-content">
             <h2>Create Lobby</h2>
             <div class="lobby-info">
-                <h3>Lobby Code: <span id="generatedLobbyCode">---------</span></h3>
-                <p>Share this code with your friends!</p>
+                <h3>🎮 LOBBY CODE 🎮</h3>
+                <div class="lobby-code-display">
+                    <span id="generatedLobbyCode">---------</span>
+                </div>
+                <p><strong>Share this code with your friends!</strong></p>
+                <p><small>Friends join by clicking "Join Lobby" and entering this code</small></p>
             </div>
             <div class="form-group">
                 <label for="hostPlayerName">Your Name:</label>
@@ -186,6 +190,26 @@
         </div>
     </div>
 
+    <!-- Multiplayer Leaderboard Overlay -->
+    <div id="multiplayerLeaderboardOverlay" class="fullscreen-overlay hidden">
+        <div class="final-leaderboard">
+            <h2>🏆 Race Results 🏆</h2>
+            <div class="race-info">
+                <p>Race: <span id="leaderboardRaceDistance"></span>m | Mode: <span id="leaderboardGameMode"></span></p>
+            </div>
+            <ol class="leaderboard-list" id="leaderboardList">
+                <!-- Dynamic leaderboard items will be added here -->
+            </ol>
+            <div class="finish-buttons" id="hostOnlyButtons">
+                <button id="restartRaceBtn" class="finish-btn primary">🔄 Restart Race</button>
+                <button id="changeModeBtn" class="finish-btn secondary">🎮 Change Mode</button>
+            </div>
+            <div class="finish-buttons" id="playerOnlyButtons" class="hidden">
+                <p>Waiting for host to decide next action...</p>
+            </div>
+        </div>
+    </div>
+
     <!-- Main Game Container -->
     <div class="game-container">
         <!-- Live Race Tracking Bar -->
@@ -241,6 +265,11 @@
             </div>
         </div>
     </div>
+    <!-- Socket.IO Client Library -->
+    <script src="/socket.io/socket.io.js"></script>
+    
+    <!-- Game Scripts -->
     <script src="script.js"></script>
+    <script src="multiplayer-client.js"></script>
 </body>
 </html>

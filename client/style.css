@@ -543,7 +543,7 @@ body {
 
 .tracking-bar-container {
     position: relative;
-    height: 40px;
+    height: 60px; /* Increased height for multiple player markers */
     margin-bottom: 10px;
 }
 
@@ -751,6 +751,24 @@ body {
     font-size: 1.5rem;
 }
 
+.lobby-code-display {
+    background: #f0f0f0;
+    border: 3px solid #4CAF50;
+    border-radius: 10px;
+    padding: 20px;
+    margin: 15px 0;
+    text-align: center;
+}
+
+.lobby-code-display span {
+    color: #4CAF50;
+    font-weight: bold;
+    font-family: 'Courier New', monospace;
+    font-size: 2.5rem;
+    letter-spacing: 4px;
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
+}
+
 .lobby-info span {
     color: #4CAF50;
     font-weight: bold;
@@ -851,26 +869,34 @@ body {
 /* Multiplayer Tracking Bar Updates */
 .multi-player-marker {
     position: absolute;
-    top: 5px;
-    width: 25px;
-    height: 25px;
-    border: 2px solid #fff;
+    width: 28px;
+    height: 28px;
+    border: 3px solid #fff;
     border-radius: 50%;
     transform: translateX(-50%);
-    transition: left 0.1s ease-out;
-    z-index: 10;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    transition: left 0.2s ease-out;
+    z-index: 15;
+    box-shadow: 0 3px 6px rgba(0, 0, 0, 0.4);
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 10px;
+    font-size: 11px;
     font-weight: bold;
+    cursor: pointer;
 }
 
-.multi-player-marker:nth-child(1) { background: #FF6B6B; top: 2px; }
-.multi-player-marker:nth-child(2) { background: #4ECDC4; top: 12px; }
-.multi-player-marker:nth-child(3) { background: #45B7D1; top: 22px; }
-.multi-player-marker:nth-child(4) { background: #96CEB4; top: 32px; }
+/* Dynamically position markers to avoid overlap */
+.multi-player-marker:nth-child(odd) { 
+    top: 3px; 
+}
+.multi-player-marker:nth-child(even) { 
+    top: 25px; 
+}
+
+/* Make sure markers are above other elements */
+.multi-player-marker {
+    z-index: 20;
+}
 
 .multi-player-name {
     position: absolute;
@@ -991,6 +1017,43 @@ body {
     
     .game-over {
         font-size: 20px;
+    }
+}
+
+/* Waiting Screen Animations */
+.waiting-message {
+    text-align: center;
+    margin: 20px 0;
+    padding: 15px;
+    background: #f0f4ff;
+    border-radius: 8px;
+    border-left: 4px solid #2196F3;
+}
+
+.loading-dots {
+    display: inline-block;
+    margin-left: 5px;
+}
+
+.loading-dots span {
+    animation: loadingDots 1.4s infinite ease-in-out;
+    color: #2196F3;
+    font-size: 1.5rem;
+    font-weight: bold;
+}
+
+.loading-dots span:nth-child(1) { animation-delay: -0.32s; }
+.loading-dots span:nth-child(2) { animation-delay: -0.16s; }
+.loading-dots span:nth-child(3) { animation-delay: 0s; }
+
+@keyframes loadingDots {
+    0%, 80%, 100% {
+        opacity: 0.2;
+        transform: scale(1);
+    }
+    40% {
+        opacity: 1;
+        transform: scale(1.2);
     }
 }
 

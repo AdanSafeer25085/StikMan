@@ -28,6 +28,13 @@ let connectedPlayers = [];
 let currentPlayerId = null;
 let multiplayerPlayers = [];
 let leaderboard = [];
+let playersFinished = 0;
+let allPlayersFinished = false;
+
+// Local multiplayer communication (using localStorage)
+const LOBBY_PREFIX = 'stickman_lobby_';
+const PLAYER_PREFIX = 'stickman_player_';
+let multiplayerUpdateInterval = null;
 let finishLineX = 5000; // Default finish line position (500m single player, 1000m+ multiplayer × 10 pixels/meter)
 
 // Race timing
@@ -230,11 +237,31 @@ function update() {
     // Check bullet collisions
     checkBulletCollisions();
     
+    // Check multiplayer bullet collisions
+    if (isMultiplayer) {
+        checkMultiplayerBulletCollisions();
+    }
+    
     // Check finish line collision
     checkFinishLineCollision();
     
     // Update live tracking system
     updatePlayerProgress();
+    
+    // Send player update to server (for multiplayer)
+    if (isMultiplayer && multiplayerClient && multiplayerClient.connected) {
+        multiplayerClient.updatePlayer({
+            x: player.x,
+            y: player.y,
+            velY: player.velY,
+            jumping: player.jumping,
+            grounded: player.grounded,
+            health: player.health,
+            progress: playerProgress,
+            score: score,
+            activePowerUp: activePowerUp
+        });
+    }
     
     // Update score and distance (only if not paused)
     if (!gamePaused && !isRespawning) {
@@ -524,6 +551,82 @@ function checkBulletCollisions() {
     }
 }
 
+// Check multiplayer bullet collisions with other players
+function checkMultiplayerBulletCollisions() {
+    if (!multiplayerPlayers || multiplayerPlayers.length <= 1) return;
+    
+    for (let i = bullets.length - 1; i >= 0; i--) {
+        const bullet = bullets[i];
+        
+        // Check collision with all other players (not self)
+        multiplayerPlayers.forEach(mpPlayer => {
+            if (mpPlayer.id === player.id) return; // Skip self
+            
+            // Calculate other player's approximate position (they share screen for now)
+            const otherPlayerIndex = multiplayerPlayers.findIndex(p => p.id === mpPlayer.id);
+            const otherX = player.x + (otherPlayerIndex * 15); // Same offset used in drawing
+            const otherY = player.y - (otherPlayerIndex * 5);
+            
+            // Check bullet collision with other player
+            if (bullet.x < otherX + player.width &&
+                bullet.x + bullet.width > otherX &&
+                bullet.y < otherY + player.height &&
+                bullet.y + bullet.height > otherY) {
+                
+                // Hit! Deal damage
+                mpPlayer.health -= 50; // 50% damage per shot as requested
+                
+                // Remove bullet
+                bullets.splice(i, 1);
+                
+                // Update player health in multiplayer array
+                if (mpPlayer.health <= 0) {
+                    mpPlayer.health = 0;
+                    handlePlayerKilled(mpPlayer);
+                }
+                
+                // Visual feedback - you could add hit effect here
+                console.log(`Player ${mpPlayer.name} hit! Health: ${mpPlayer.health}`);
+                
+                return; // Bullet is consumed, break out
+            }
+        });
+    }
+}
+
+// Handle when a player is killed
+function handlePlayerKilled(killedPlayer) {
+    console.log(`${killedPlayer.name} was killed!`);
+    
+    // Start respawn countdown for killed player
+    if (killedPlayer.id === player.id) {
+        // Current player was killed
+        startMultiplayerRespawn();
+    }
+    
+    // Reset player position and health after respawn delay
+    setTimeout(() => {
+        killedPlayer.health = 100; // Full health on respawn
+        killedPlayer.x = 100; // Reset to start position
+        killedPlayer.y = groundY - player.height; // Position on ground
+        console.log(`${killedPlayer.name} respawned!`);
+    }, 2000); // 2-second respawn delay as requested
+}
+
+// Start multiplayer respawn countdown
+function startMultiplayerRespawn() {
+    // Similar to existing respawn system but for multiplayer
+    console.log('Starting multiplayer respawn...');
+    
+    // TODO: Show respawn countdown UI
+    // For now, just reset after 2 seconds
+    setTimeout(() => {
+        // Reset player position but keep in current segment
+        resetPlayerToSegmentStart();
+        console.log('Multiplayer respawn complete');
+    }, 2000);
+}
+
 // Check finish line collision
 function checkFinishLineCollision() {
     if (raceFinished || !gameInitialized) return;
@@ -537,9 +640,192 @@ function checkFinishLineCollision() {
     // Only finish when player has truly reached 100% progress
     if (playerProgress >= 1.0) {
         console.log(`RACE COMPLETED at ${(playerProgress * 100).toFixed(2)}% progress`);
-        raceFinished = true;
-        completeRace();
+        
+        if (isMultiplayer) {
+            handleMultiplayerFinish();
+        } else {
+            raceFinished = true;
+            completeRace();
+        }
     }
+}
+
+// Handle multiplayer finish line collision
+function handleMultiplayerFinish() {
+    // Mark current player as finished
+    const currentPlayer = multiplayerPlayers.find(p => p.id === player.id);
+    if (currentPlayer && !currentPlayer.finishTime) {
+        currentPlayer.finishTime = Date.now();
+        playersFinished++;
+        
+        console.log(`${playerName} finished! (${playersFinished}/${multiplayerPlayers.length})`);
+        
+        // Update leaderboard
+        updateMultiplayerLeaderboard();
+        
+        // Check if all players finished
+        if (playersFinished >= multiplayerPlayers.length) {
+            // All players finished - show final leaderboard
+            allPlayersFinished = true;
+            gameRunning = false;
+            showMultiplayerLeaderboard();
+        } else {
+            // Show waiting screen for this player
+            showFinishLineWaitingScreen();
+        }
+    }
+}
+
+// Show waiting screen for players who finished early
+function showFinishLineWaitingScreen() {
+    // Create waiting overlay
+    const waitingDiv = document.createElement('div');
+    waitingDiv.id = 'finishLineWaiting';
+    waitingDiv.className = 'fullscreen-overlay';
+    waitingDiv.innerHTML = `
+        <div class="game-finished-message">
+            <h1>🏁 You Finished! 🏁</h1>
+            <div class="completion-stats">
+                <p><strong>Great job ${playerName}!</strong></p>
+                <p>You completed the ${raceDistance}m race</p>
+                <p>Position: ${playersFinished} of ${multiplayerPlayers.length}</p>
+            </div>
+            <div class="waiting-message">
+                <p>Waiting for other players to finish...</p>
+                <div class="loading-dots">
+                    <span>.</span><span>.</span><span>.</span>
+                </div>
+                <p>Players finished: ${playersFinished}/${multiplayerPlayers.length}</p>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(waitingDiv);
+}
+
+// Update multiplayer leaderboard during race
+function updateMultiplayerLeaderboard() {
+    // Sort players by finish time (finished players first, then by time)
+    leaderboard = [...multiplayerPlayers].sort((a, b) => {
+        if (a.finishTime && b.finishTime) {
+            return a.finishTime - b.finishTime; // Earlier finish time wins
+        } else if (a.finishTime && !b.finishTime) {
+            return -1; // Finished players come first
+        } else if (!a.finishTime && b.finishTime) {
+            return 1; // Non-finished players come after
+        } else {
+            return b.progress - a.progress; // Sort by progress for non-finished
+        }
+    });
+}
+
+// Show final multiplayer leaderboard
+function showMultiplayerLeaderboard(lobbyData) {
+    // Remove any existing waiting screens
+    const waitingScreen = document.getElementById('finishLineWaiting');
+    if (waitingScreen) {
+        waitingScreen.remove();
+    }
+    
+    // Update leaderboard one final time
+    updateMultiplayerLeaderboard();
+    
+    // Show leaderboard overlay
+    const overlay = document.getElementById('multiplayerLeaderboardOverlay');
+    const leaderboardList = document.getElementById('leaderboardList');
+    const hostButtons = document.getElementById('hostOnlyButtons');
+    const playerButtons = document.getElementById('playerOnlyButtons');
+    
+    // Populate race info
+    document.getElementById('leaderboardRaceDistance').textContent = raceDistance;
+    document.getElementById('leaderboardGameMode').textContent = gameMode;
+    
+    // Clear and populate leaderboard
+    leaderboardList.innerHTML = '';
+    leaderboard.forEach((player, index) => {
+        const li = document.createElement('li');
+        li.className = `leaderboard-item ${index === 0 ? 'first' : index === 1 ? 'second' : index === 2 ? 'third' : ''}`;
+        
+        const position = index + 1;
+        const finishTime = player.finishTime ? 
+            `${Math.round((player.finishTime - raceStartTime) / 1000)}s` : 
+            'DNF';
+        
+        li.innerHTML = `
+            <span class="position-number">${position}</span>
+            <span class="player-name">${player.name}</span>
+            <span class="completion-time">${finishTime}</span>
+        `;
+        
+        leaderboardList.appendChild(li);
+    });
+    
+    // Show appropriate buttons based on host status
+    if (isHost) {
+        hostButtons.style.display = 'flex';
+        playerButtons.style.display = 'none';
+    } else {
+        hostButtons.style.display = 'none';
+        playerButtons.style.display = 'block';
+    }
+    
+    // Show overlay
+    overlay.classList.remove('hidden');
+}
+
+// Restart multiplayer race (host only)
+function restartMultiplayerRace() {
+    if (!isHost) return;
+    
+    // Reset multiplayer state
+    playersFinished = 0;
+    allPlayersFinished = false;
+    leaderboard = [];
+    
+    // Reset all players
+    multiplayerPlayers.forEach(player => {
+        player.finishTime = null;
+        player.progress = 0;
+        player.health = 100;
+        player.x = 100;
+        player.y = groundY - 40; // Position on ground (player height is 40)
+    });
+    
+    // Update lobby to restart state
+    updateLobbyData(lobbyCode, {
+        gameState: 'racing',
+        raceStartTime: Date.now()
+    });
+    
+    // Restart the game
+    resetGameState();
+    startMainGame();
+}
+
+// Reset multiplayer game (host only)
+function resetMultiplayerGame() {
+    if (!isHost) return;
+    
+    // Reset multiplayer state
+    playersFinished = 0;
+    allPlayersFinished = false;
+    leaderboard = [];
+    
+    // Reset all players
+    multiplayerPlayers.forEach(player => {
+        player.finishTime = null;
+        player.progress = 0;
+        player.health = 100;
+        player.x = 100;
+        player.y = groundY - 40; // Position on ground (player height is 40)
+    });
+    
+    // Update lobby to lobby state
+    updateLobbyData(lobbyCode, {
+        gameState: 'lobby'
+    });
+    
+    // Reset game state
+    resetGameState();
 }
 
 // Complete the race
@@ -643,6 +929,15 @@ function updatePlayerProgress() {
 
 // Update tracking bar visual elements
 function updateTrackingBarDisplay() {
+    if (isMultiplayer) {
+        updateMultiplayerTrackingBar();
+    } else {
+        updateSinglePlayerTrackingBar();
+    }
+}
+
+// Update single player tracking bar
+function updateSinglePlayerTrackingBar() {
     const progressBar = document.getElementById('trackingProgress');
     const playerMarker = document.getElementById('playerMarker');
     
@@ -655,6 +950,61 @@ function updateTrackingBarDisplay() {
     } else if (gameRunning && Math.floor(Date.now() / 5000) % 2 === 0) {
         // Debug log every 5 seconds if elements not found
         console.log('WARNING: Tracking bar elements not found for update');
+    }
+}
+
+// Update multiplayer tracking bar
+function updateMultiplayerTrackingBar() {
+    const trackingBarContainer = document.querySelector('.tracking-bar-container');
+    const progressBar = document.getElementById('trackingProgress');
+    
+    if (!trackingBarContainer || !multiplayerPlayers) return;
+    
+    // Remove existing multiplayer markers
+    const existingMarkers = trackingBarContainer.querySelectorAll('.multi-player-marker');
+    existingMarkers.forEach(marker => marker.remove());
+    
+    // Calculate and update progress for all players
+    multiplayerPlayers.forEach((mpPlayer, index) => {
+        // Calculate each player's individual progress
+        let playerProgressPercent = 0;
+        
+        if (mpPlayer.id === player.id) {
+            // Use local progress for current player (smoother)
+            playerProgressPercent = playerProgress;
+        } else {
+            // Calculate progress from server data for other players
+            if (mpPlayer.x && finishLineX) {
+                playerProgressPercent = Math.min(mpPlayer.x / finishLineX, 1);
+            }
+        }
+        
+        // Update the player's progress in the server data
+        mpPlayer.progress = playerProgressPercent;
+        
+        // Create marker for this player
+        const marker = document.createElement('div');
+        marker.className = 'multi-player-marker';
+        marker.style.left = `${playerProgressPercent * 100}%`;
+        marker.style.background = mpPlayer.color;
+        marker.style.color = 'white';
+        marker.style.fontSize = '12px';
+        marker.style.fontWeight = 'bold';
+        marker.textContent = mpPlayer.name.charAt(0).toUpperCase();
+        
+        // Add player name tooltip
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'multi-player-name';
+        nameSpan.textContent = `${mpPlayer.name} (${(playerProgressPercent * 100).toFixed(1)}%)`;
+        marker.appendChild(nameSpan);
+        
+        trackingBarContainer.appendChild(marker);
+    });
+    
+    // Update the main progress bar to show the furthest player's progress
+    if (progressBar) {
+        const maxProgress = Math.max(...multiplayerPlayers.map(p => p.progress || 0));
+        progressBar.style.width = `${maxProgress * 100}%`;
     }
 }
 
@@ -833,6 +1183,15 @@ function shoot() {
         lastShotTime = currentTime; // Update last shot time
         shootingAnimation = 10; // Start muzzle flash animation (10 frames)
         
+        // Send bullet to server (for multiplayer)
+        if (isMultiplayer && multiplayerClient && multiplayerClient.connected) {
+            multiplayerClient.shoot({
+                x: bullet.x,
+                y: bullet.y,
+                speed: bullet.speed
+            });
+        }
+        
         // Simple shooting sound effect (if browser supports it)
         try {
             const audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -894,8 +1253,12 @@ function draw() {
     // Draw ground
     drawGround();
     
-    // Draw player
-    drawPlayer();
+    // Draw player(s)
+    if (isMultiplayer) {
+        drawMultiplayerPlayers();
+    } else {
+        drawPlayer();
+    }
     
     // Draw obstacles
     drawObstacles();
@@ -1125,6 +1488,241 @@ function drawPlayer() {
     } else if (activePowerUp.type === 'diver' && gameMode === 'underwater') {
         drawDivingEffect();
     }
+}
+
+// Draw all multiplayer players
+function drawMultiplayerPlayers() {
+    if (!multiplayerPlayers || multiplayerPlayers.length === 0) return;
+    
+    multiplayerPlayers.forEach((mpPlayer, index) => {
+        ctx.save();
+        
+        // Use actual server-synchronized positions for each player
+        let x = mpPlayer.x || 100;
+        let y = mpPlayer.y || (groundY - 40);
+        
+        // For the current player, use local position for smooth movement
+        if (mpPlayer.id === player.id) {
+            x = player.x;
+            y = player.y;
+        }
+        
+        // Calculate relative position to current player (camera offset)
+        // This ensures all players are visible on each player's screen
+        const relativeX = x;
+        const relativeY = y;
+        
+        // Only draw if player is within reasonable distance (optional optimization)
+        if (Math.abs(relativeX - player.x) < 1000) { // Within 1000 pixels
+            // Move to player position
+            ctx.translate(relativeX + player.width/2, relativeY + player.height/2);
+            
+            // Set player color
+            ctx.fillStyle = mpPlayer.color;
+            ctx.strokeStyle = mpPlayer.color;
+            
+            // Draw the current player (self) with special effects
+            if (mpPlayer.id === player.id) {
+                // Draw with all current power-ups and effects
+                if (activePowerUp.type === 'car' && gameMode === 'land') {
+                    drawPlayerInCar();
+                } else if (activePowerUp.type === 'boat' && gameMode === 'underwater') {
+                    drawPlayerInBoat();
+                } else {
+                    drawNormalPlayer();
+                }
+                
+                // Draw gun if gun power-up is active
+                if (activePowerUp.type === 'gun') {
+                    drawGun();
+                }
+                
+                // Draw super jump/diving effect
+                if (activePowerUp.type === 'jumper' && gameMode === 'land') {
+                    drawSuperJumpEffect();
+                } else if (activePowerUp.type === 'diver' && gameMode === 'underwater') {
+                    drawDivingEffect();
+                }
+            } else {
+                // Draw other players using the same rendering as single player
+                drawMultiplayerPlayerSprite(mpPlayer);
+            }
+            
+            // Draw player name tag
+            drawPlayerNameTag(mpPlayer.name);
+            
+            // Draw health bar
+            drawPlayerHealthBar(mpPlayer.health);
+        }
+        
+        ctx.restore();
+    });
+}
+
+// Draw multiplayer player sprite (for other players) - same as single player but with color tint
+function drawMultiplayerPlayerSprite(mpPlayer) {
+    ctx.save();
+    
+    // Apply color tint for multiplayer differentiation
+    ctx.globalCompositeOperation = 'source-over';
+    
+    // Use the same rendering logic as single player based on their power-up state
+    if (mpPlayer.activePowerUp && mpPlayer.activePowerUp.type === 'car' && gameMode === 'land') {
+        drawPlayerInCarMultiplayer(mpPlayer);
+    } else if (mpPlayer.activePowerUp && mpPlayer.activePowerUp.type === 'boat' && gameMode === 'underwater') {
+        drawPlayerInBoatMultiplayer(mpPlayer);
+    } else {
+        drawNormalPlayerMultiplayer(mpPlayer);
+    }
+    
+    // Draw gun if they have gun power-up
+    if (mpPlayer.activePowerUp && mpPlayer.activePowerUp.type === 'gun') {
+        drawGunMultiplayer(mpPlayer);
+    }
+    
+    ctx.restore();
+}
+
+// Draw normal multiplayer player (same as single player but with color tint)
+function drawNormalPlayerMultiplayer(mpPlayer) {
+    ctx.save();
+    
+    // Apply rotation for underwater mode
+    if (gameMode === 'underwater') {
+        ctx.rotate(-Math.PI / 3); // Swimming rotation like single player
+    }
+    
+    // Try to draw player image first (same as single player)
+    if (player.image.complete && player.image.naturalHeight !== 0) {
+        // Apply color tint for multiplayer
+        ctx.fillStyle = mpPlayer.color;
+        ctx.fillRect(-player.width/2, -player.height/2, player.width, player.height);
+        ctx.globalCompositeOperation = 'source-atop';
+        ctx.drawImage(player.image, -player.width/2, -player.height/2, player.width, player.height);
+        ctx.globalCompositeOperation = 'source-over';
+    } else {
+        // Fallback: use the same stick figure as single player but with player color
+        ctx.fillStyle = mpPlayer.color;
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 2;
+        
+        // Body
+        ctx.fillRect(-player.width/2, -player.height/2, player.width, player.height);
+        ctx.strokeRect(-player.width/2, -player.height/2, player.width, player.height);
+        
+        // Head
+        ctx.beginPath();
+        ctx.arc(0, -player.height/3, 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        
+        // Arms
+        ctx.beginPath();
+        ctx.moveTo(-8, -5);
+        ctx.lineTo(8, -5);
+        ctx.stroke();
+        
+        // Legs  
+        ctx.beginPath();
+        ctx.moveTo(-5, player.height/3);
+        ctx.lineTo(-3, player.height/2 - 2);
+        ctx.moveTo(5, player.height/3);
+        ctx.lineTo(3, player.height/2 - 2);
+        ctx.stroke();
+    }
+    
+    ctx.restore();
+}
+
+// Draw multiplayer player in car (same as single player but with color)
+function drawPlayerInCarMultiplayer(mpPlayer) {
+    ctx.save();
+    ctx.fillStyle = mpPlayer.color;
+    
+    // Draw car body (same size as single player)
+    ctx.fillRect(-25, -15, 50, 25);
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(-25, -15, 50, 25);
+    
+    // Draw wheels
+    ctx.fillStyle = '#333333';
+    ctx.beginPath();
+    ctx.arc(-15, 10, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(15, 10, 6, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Draw player in car (colored)
+    ctx.fillStyle = mpPlayer.color;
+    ctx.fillRect(-10, -10, 20, 15);
+    
+    ctx.restore();
+}
+
+// Draw multiplayer player in boat (same as single player but with color)
+function drawPlayerInBoatMultiplayer(mpPlayer) {
+    ctx.save();
+    ctx.fillStyle = mpPlayer.color;
+    
+    // Draw boat body
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 25, 12, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    
+    // Draw player in boat
+    ctx.fillStyle = mpPlayer.color;
+    ctx.fillRect(-8, -8, 16, 12);
+    
+    ctx.restore();
+}
+
+// Draw gun for multiplayer player
+function drawGunMultiplayer(mpPlayer) {
+    ctx.save();
+    ctx.fillStyle = '#FFD700';
+    ctx.fillRect(15, -2, 12, 4);
+    ctx.restore();
+}
+
+// Draw player name tag
+function drawPlayerNameTag(name) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+    ctx.fillRect(-25, -15, 50, 10);
+    
+    ctx.fillStyle = 'white';
+    ctx.font = '9px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(name, 0, -8);
+    ctx.restore();
+}
+
+// Draw player health bar
+function drawPlayerHealthBar(health) {
+    const maxHealth = 100;
+    const healthPercentage = health / maxHealth;
+    
+    ctx.save();
+    // Background bar - positioned right on top of player's head
+    ctx.fillStyle = 'rgba(255, 0, 0, 0.3)';
+    ctx.fillRect(-20, -22, 40, 3);
+    
+    // Health bar
+    if (healthPercentage > 0.7) {
+        ctx.fillStyle = 'rgba(0, 255, 0, 0.8)';
+    } else if (healthPercentage > 0.3) {
+        ctx.fillStyle = 'rgba(255, 255, 0, 0.8)';
+    } else {
+        ctx.fillStyle = 'rgba(255, 0, 0, 0.8)';
+    }
+    
+    ctx.fillRect(-20, -22, 40 * healthPercentage, 3);
+    ctx.restore();
 }
 
 // Draw normal player
@@ -1671,11 +2269,18 @@ function showCreateLobbyPanel() {
     document.getElementById('lobbyModePanel').classList.add('hidden');
     document.getElementById('createLobbyPanel').classList.remove('hidden');
     
-    // Generate lobby code
-    lobbyCode = generateLobbyCode();
-    document.getElementById('generatedLobbyCode').textContent = lobbyCode;
     isHost = true;
     isMultiplayer = true;
+    
+    // Reset the lobby code display
+    document.getElementById('generatedLobbyCode').textContent = '---------';
+    
+    // Reset the start button
+    const startButton = document.getElementById('startMultiGameBtn');
+    if (startButton) {
+        startButton.disabled = false;
+        startButton.textContent = 'Create Lobby';
+    }
 }
 
 // Show join lobby panel
@@ -1685,15 +2290,243 @@ function showJoinLobbyPanel() {
     isMultiplayer = true;
 }
 
+// Show player waiting screen (for non-host players)
+function showPlayerWaitingScreen() {
+    // Create a simple waiting screen
+    const waitingDiv = document.createElement('div');
+    waitingDiv.id = 'playerWaitingScreen';
+    waitingDiv.className = 'overlay-panel';
+    waitingDiv.innerHTML = `
+        <div class="panel-content">
+            <h2>🎮 Joined Lobby!</h2>
+            <div class="lobby-info">
+                <h3>Lobby Code: <span>${lobbyCode}</span></h3>
+                <p>You have successfully joined the lobby!</p>
+            </div>
+            <div class="waiting-message">
+                <p><strong>Waiting for host to start the game...</strong></p>
+                <div class="loading-dots">
+                    <span>.</span><span>.</span><span>.</span>
+                </div>
+            </div>
+            <div id="waitingPlayerList" class="connected-players">
+                <h4>Players in Lobby:</h4>
+                <div id="waitingPlayers"></div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(waitingDiv);
+    
+    // Initial update of waiting player list
+    const lobbyData = getLobbyData(lobbyCode);
+    if (lobbyData) {
+        updateWaitingPlayersList(lobbyData);
+    }
+}
+
+// Update waiting players list
+function updateWaitingPlayersList(lobbyData) {
+    const waitingPlayersDiv = document.getElementById('waitingPlayers');
+    if (!waitingPlayersDiv) return;
+    
+    waitingPlayersDiv.innerHTML = '';
+    lobbyData.players.forEach(player => {
+        const playerDiv = document.createElement('div');
+        playerDiv.className = `player-item ${player.isHost ? 'host' : ''}`;
+        playerDiv.innerHTML = `${player.isHost ? '👑' : '👤'} <span>${player.name}</span> ${player.isHost ? '(Host)' : ''}`;
+        waitingPlayersDiv.appendChild(playerDiv);
+    });
+}
+
 // Generate 9-digit lobby code
 function generateLobbyCode() {
     return Math.floor(100000000 + Math.random() * 900000000).toString();
+}
+
+// === LOCAL MULTIPLAYER COMMUNICATION SYSTEM ===
+
+// Create lobby in localStorage
+function createLocalLobby(code, hostName, raceDistance, gameMode) {
+    const lobbyData = {
+        code: code,
+        host: hostName,
+        raceDistance: raceDistance,
+        gameMode: gameMode || 'land',
+        players: [{
+            id: 'host',
+            name: hostName,
+            isHost: true,
+            joinTime: Date.now()
+        }],
+        gameState: 'lobby', // lobby, racing, finished
+        raceStartTime: null,
+        created: Date.now()
+    };
+    
+    localStorage.setItem(LOBBY_PREFIX + code, JSON.stringify(lobbyData));
+    return lobbyData;
+}
+
+// Join existing lobby
+function joinLocalLobby(code, playerName) {
+    const lobbyKey = LOBBY_PREFIX + code;
+    const lobbyData = JSON.parse(localStorage.getItem(lobbyKey));
+    
+    if (!lobbyData) {
+        return { success: false, error: 'Lobby not found' };
+    }
+    
+    // Check if player already exists
+    const existingPlayer = lobbyData.players.find(p => p.name === playerName);
+    if (existingPlayer) {
+        return { success: false, error: 'Player name already taken' };
+    }
+    
+    // Add new player
+    const playerId = 'player_' + Date.now();
+    lobbyData.players.push({
+        id: playerId,
+        name: playerName,
+        isHost: false,
+        joinTime: Date.now()
+    });
+    
+    localStorage.setItem(lobbyKey, JSON.stringify(lobbyData));
+    return { success: true, lobby: lobbyData, playerId: playerId };
+}
+
+// Get lobby data
+function getLobbyData(code) {
+    const lobbyData = localStorage.getItem(LOBBY_PREFIX + code);
+    return lobbyData ? JSON.parse(lobbyData) : null;
+}
+
+// Update lobby data
+function updateLobbyData(code, updates) {
+    const lobbyKey = LOBBY_PREFIX + code;
+    const lobbyData = JSON.parse(localStorage.getItem(lobbyKey));
+    if (lobbyData) {
+        Object.assign(lobbyData, updates);
+        localStorage.setItem(lobbyKey, JSON.stringify(lobbyData));
+        return lobbyData;
+    }
+    return null;
+}
+
+// Listen for lobby changes
+function startMultiplayerListener() {
+    if (multiplayerUpdateInterval) return;
+    
+    multiplayerUpdateInterval = setInterval(() => {
+        if (!isMultiplayer || !lobbyCode) return;
+        
+        const lobbyData = getLobbyData(lobbyCode);
+        if (!lobbyData) return;
+        
+        // Update connected players list
+        updateConnectedPlayersList(lobbyData);
+        
+        // Handle game state changes
+        handleGameStateChanges(lobbyData);
+        
+    }, 500); // Check every 500ms
+}
+
+// Stop multiplayer listener
+function stopMultiplayerListener() {
+    if (multiplayerUpdateInterval) {
+        clearInterval(multiplayerUpdateInterval);
+        multiplayerUpdateInterval = null;
+    }
+}
+
+// Update connected players display
+function updateConnectedPlayersList(lobbyData) {
+    // Update host lobby display
+    const playerList = document.getElementById('playerList');
+    const playerCount = document.getElementById('playerCount');
+    const hostNameSpan = document.getElementById('hostName');
+    
+    if (playerList && playerCount) {
+        playerCount.textContent = lobbyData.players.length;
+        playerList.innerHTML = '';
+        
+        lobbyData.players.forEach(player => {
+            const playerDiv = document.createElement('div');
+            playerDiv.className = `player-item ${player.isHost ? 'host' : ''}`;
+            playerDiv.innerHTML = `${player.isHost ? '👑' : '👤'} <span>${player.name}</span> ${player.isHost ? '(Host)' : ''}`;
+            playerList.appendChild(playerDiv);
+        });
+        
+        // Update host name display
+        if (hostNameSpan) {
+            const hostPlayer = lobbyData.players.find(p => p.isHost);
+            if (hostPlayer) {
+                hostNameSpan.textContent = hostPlayer.name;
+            }
+        }
+    }
+    
+    // Update waiting screen for non-host players
+    if (!isHost) {
+        updateWaitingPlayersList(lobbyData);
+    }
+}
+
+// Handle game state changes
+function handleGameStateChanges(lobbyData) {
+    if (lobbyData.gameState === 'racing' && gameFlowState !== 'ready') {
+        // Host started the game, join the race
+        if (!isHost) {
+            joinMultiplayerRace(lobbyData);
+        }
+    } else if (lobbyData.gameState === 'finished' && !allPlayersFinished) {
+        // Show final leaderboard
+        showMultiplayerLeaderboard(lobbyData);
+    }
+}
+
+// Join multiplayer race (for non-host players)
+function joinMultiplayerRace(lobbyData) {
+    // Set up game settings from host
+    raceDistance = lobbyData.raceDistance;
+    gameMode = lobbyData.gameMode || 'land';
+    finishLineX = calculateFinishLinePosition(raceDistance);
+    
+    // Initialize multiplayer players array from lobby
+    multiplayerPlayers = lobbyData.players.map((p, index) => ({
+        id: p.id,
+        name: p.name,
+        x: 100,
+        y: groundY - player.height, // Position on ground
+        progress: 0,
+        health: 100,
+        color: ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4'][index % 4],
+        finishTime: null,
+        isHost: p.isHost
+    }));
+    
+    // Hide waiting screen
+    const waitingScreen = document.getElementById('playerWaitingScreen');
+    if (waitingScreen) {
+        waitingScreen.remove();
+    }
+    
+    // Hide all lobby panels and start game
+    hideAllPanels();
+    startMainGame();
 }
 
 function showModeSelectionPanel() {
     gameFlowState = 'modeSelection';
     const playerSetupPanel = document.getElementById('playerSetupPanel');
     const modeSelectionPanel = document.getElementById('modeSelectionPanel');
+    
+    // For non-host multiplayer players, skip mode selection
+    if (isMultiplayer && !isHost) {
+        // Non-host players should wait for host to select mode
+        return; // Mode selection will be handled by game state changes from host
+    }
     
     playerSetupPanel.classList.add('hidden');
     setTimeout(() => {
@@ -1905,25 +2738,30 @@ function setupPreGameEventListeners() {
             return;
         }
         
-        if (!codeInput.value.trim() || codeInput.value.length !== 9) {
-            alert('Please enter a valid 9-digit lobby code!');
+        if (!codeInput.value.trim() || codeInput.value.length !== 6) {
+            alert('Please enter a valid 6-digit lobby code!');
             codeInput.focus();
             return;
         }
         
-        // Simulate joining lobby (in real implementation, this would connect to server)
-        playerName = nameInput.value.trim();
-        player.name = playerName;
-        alert(`Joining lobby ${codeInput.value}... (Simulated - not connected to real server)`);
-        
-        // For demo purposes, proceed directly to mode selection
-        document.getElementById('joinLobbyPanel').classList.add('hidden');
-        showModeSelectionPanel();
+        // Join lobby using Socket.IO
+        if (multiplayerClient && multiplayerClient.connected) {
+            playerName = nameInput.value.trim();
+            player.name = playerName;
+            isMultiplayer = true;
+            isHost = false;
+            
+            document.getElementById('joinLobbyPanel').classList.add('hidden');
+            multiplayerClient.joinLobby(codeInput.value, playerName);
+        } else {
+            alert('Not connected to multiplayer server. Please refresh and try again.');
+        }
     });
     
     // Start Multiplayer Game button
     document.getElementById('startMultiGameBtn').addEventListener('click', function() {
         const nameInput = document.getElementById('hostPlayerName');
+        const startButton = this;
         
         if (!nameInput.value.trim()) {
             alert('Please enter your name!');
@@ -1931,30 +2769,33 @@ function setupPreGameEventListeners() {
             return;
         }
         
-        // Set up host player
-        playerName = nameInput.value.trim();
-        player.name = playerName;
-        player.id = 'host';
+        // Check if lobby is already created (button text changed)
+        if (startButton.textContent === 'Start Game' && !startButton.disabled) {
+            // Lobby already exists, proceed to mode selection
+            document.getElementById('createLobbyPanel').classList.add('hidden');
+            showModeSelectionPanel();
+            return;
+        }
         
-        // Get selected race distance
-        const selectedRace = document.querySelector('input[name="multiRaceType"]:checked');
-        raceDistance = parseInt(selectedRace.value);
-        finishLineX = calculateFinishLinePosition(raceDistance);
-        
-        // Initialize multiplayer players array
-        multiplayerPlayers = [{
-            id: 'host',
-            name: playerName,
-            x: 100,
-            y: 200,
-            progress: 0,
-            health: 100,
-            color: '#FF6B6B',
-            finishTime: null
-        }];
-        
-        document.getElementById('createLobbyPanel').classList.add('hidden');
-        showModeSelectionPanel();
+        // Create lobby using Socket.IO (first click)
+        if (multiplayerClient && multiplayerClient.connected) {
+            playerName = nameInput.value.trim();
+            player.name = playerName;
+            isHost = true;
+            
+            // Get selected race distance
+            const selectedRace = document.querySelector('input[name="multiRaceType"]:checked');
+            raceDistance = parseInt(selectedRace.value);
+            
+            // Disable button and show loading
+            startButton.disabled = true;
+            startButton.textContent = 'Creating Lobby...';
+            
+            // Create the lobby on the server
+            multiplayerClient.createLobby(playerName);
+        } else {
+            alert('Not connected to multiplayer server. Please refresh and try again.');
+        }
     });
     
     // Back buttons
@@ -1971,13 +2812,43 @@ function setupPreGameEventListeners() {
     // Land mode button
     document.getElementById('landModeBtn').addEventListener('click', function() {
         gameMode = 'land';
-        startMainGame();
+        
+        if (isMultiplayer && isHost && multiplayerClient) {
+            // Start race with Socket.IO
+            multiplayerClient.startRace(raceDistance, 'land');
+        } else {
+            startMainGame();
+        }
     });
     
     // Underwater mode button
     document.getElementById('underwaterModeBtn').addEventListener('click', function() {
         gameMode = 'underwater';
-        startMainGame();
+        
+        if (isMultiplayer && isHost && multiplayerClient) {
+            // Start race with Socket.IO
+            multiplayerClient.startRace(raceDistance, 'underwater');
+        } else {
+            startMainGame();
+        }
+    });
+    
+    // Multiplayer leaderboard buttons (host only)
+    document.getElementById('restartRaceBtn').addEventListener('click', function() {
+        if (!isHost) return; // Double check host status
+        
+        // Restart the same race
+        document.getElementById('multiplayerLeaderboardOverlay').classList.add('hidden');
+        restartMultiplayerRace();
+    });
+    
+    document.getElementById('changeModeBtn').addEventListener('click', function() {
+        if (!isHost) return; // Double check host status
+        
+        // Go back to mode selection
+        document.getElementById('multiplayerLeaderboardOverlay').classList.add('hidden');
+        resetMultiplayerGame();
+        showModeSelectionPanel();
     });
     
     // Allow Enter key to submit player setup
