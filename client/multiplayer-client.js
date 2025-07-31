@@ -17,8 +17,8 @@ class MultiplayerClient {
     connect() {
         console.log('🔄 Attempting to connect to multiplayer server...');
         
-        // Connect to Socket.IO server - automatically detects the server URL
-        const serverUrl = window.location.origin; // Uses current page's origin (protocol + host + port)
+        // Connect to deployed Socket.IO server
+        const serverUrl = 'https://stikman-production.up.railway.app';
         console.log('🌐 Connecting to:', serverUrl);
         this.socket = io(serverUrl);
         
