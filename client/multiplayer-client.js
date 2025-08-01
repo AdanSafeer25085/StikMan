@@ -32,6 +32,7 @@ class MultiplayerClient {
         this.socket.on('connect_error', (error) => {
             console.error('❌ Connection error:', error);
             console.log('💡 Make sure the server is running and accessible');
+            console.log('🔄 Will retry connection...');
             this.connected = false;
         });
         
@@ -53,12 +54,14 @@ class MultiplayerClient {
         });
         
         this.socket.on('lobbyJoined', (data) => {
+            console.log('📥 Received lobbyJoined response:', data);
             if (data.success) {
-                this.lobbyCode = data.code;
+                this.lobbyCode = data.gameState.code;
                 this.isHost = false;
                 this.gameState = data.gameState;
                 this.onLobbyJoined(data);
             } else {
+                console.error('❌ Failed to join lobby:', data.error);
                 this.onError(data.error);
             }
         });
@@ -103,11 +106,16 @@ class MultiplayerClient {
     }
     
     joinLobby(code, playerName) {
+        console.log('🔄 Attempting to join lobby:', code, 'as player:', playerName);
+        console.log('🔗 Connection status:', this.connected);
+        
         if (!this.connected) {
+            console.error('❌ Not connected to server when trying to join lobby');
             this.onError('Not connected to server');
             return;
         }
         
+        console.log('📤 Sending joinLobby event to server...');
         this.socket.emit('joinLobby', {
             code: code,
             playerName: playerName
@@ -196,7 +204,8 @@ class MultiplayerClient {
     }
     
     onLobbyJoined(data) {
-        console.log('Joined lobby:', data.gameState.code);
+        console.log('✅ Successfully joined lobby:', data.gameState.code);
+        console.log('📊 Lobby state:', data.gameState);
         // Show waiting screen
         this.showPlayerWaitingScreen(data.gameState);
     }

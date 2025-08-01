@@ -366,9 +366,13 @@ io.on('connection', (socket) => {
     
     // Join lobby
     socket.on('joinLobby', (data) => {
+        console.log(`🔄 Join lobby request: Player "${data.playerName}" trying to join lobby "${data.code}"`);
+        console.log(`📊 Available lobbies:`, Array.from(lobbies.keys()));
         const lobby = lobbies.get(data.code);
         
         if (!lobby) {
+            console.log(`❌ Lobby "${data.code}" not found`);
+            console.log(`🗂️ Total lobbies: ${lobbies.size}`);
             socket.emit('lobbyJoined', {
                 success: false,
                 error: 'Lobby not found'
@@ -408,7 +412,7 @@ io.on('connection', (socket) => {
             gameState: lobby.getGameState()
         });
         
-        console.log(`${data.playerName} joined lobby: ${data.code}`);
+        console.log(`✅ ${data.playerName} successfully joined lobby: ${data.code}`);
     });
     
     // Start race (host only)

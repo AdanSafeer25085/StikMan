@@ -2738,8 +2738,9 @@ function setupPreGameEventListeners() {
             return;
         }
         
-        if (!codeInput.value.trim() || codeInput.value.length !== 6) {
-            alert('Please enter a valid 6-digit lobby code!');
+        const lobbyCode = codeInput.value.trim();
+        if (!lobbyCode || lobbyCode.length !== 6 || !/^\d{6}$/.test(lobbyCode)) {
+            alert('Please enter a valid 6-digit lobby code (numbers only)!');
             codeInput.focus();
             return;
         }
@@ -2752,7 +2753,7 @@ function setupPreGameEventListeners() {
             isHost = false;
             
             document.getElementById('joinLobbyPanel').classList.add('hidden');
-            multiplayerClient.joinLobby(codeInput.value, playerName);
+            multiplayerClient.joinLobby(lobbyCode, playerName);
         } else {
             alert('Not connected to multiplayer server. Please refresh and try again.');
         }
